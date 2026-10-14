@@ -1,5 +1,7 @@
 import sqlite3
 import sys
+import bcrypt
+from datetime import datetime
 from flask import Flask, jsonify, render_template_string, request
 
 app = Flask(__name__)
@@ -75,7 +77,7 @@ def welcome():
                     <tr>
                         <td>GET</td>
                         <td><code>/api/tareas</code></td>
-                        <td>Lista todas las tareas del usuario autenticado.</td>
+                        <td>Lista todas las tareas.</td>
                         <td>JSON array (o mensaje si está vacío)</td>
                     </tr>
                     <tr>
@@ -105,6 +107,8 @@ def welcome():
                 </tbody>
             </table>
         </section>
+        <br><br><br>
+        <footer>El sistema no tiene autorización, solo autenticación.</footer>
     </body>
     </html>
     """
@@ -274,6 +278,65 @@ def delete_task(task_id):
     except sqlite3.Error as err:
         print(f"Error al eliminar la tarea #{task_id} de la base de datos: {err}")
         return jsonify({"error": "Error al eliminar la tarea"}), 500
+
+
+@app.route("/registro", methods=["POST"])
+def register():
+    data = request.get_json(silent=True) or {}
+    user = (data.get("usuario") or "").strip()
+    password = data.get("contraseña") or ""
+
+    if not user or not password:
+        return (
+            jsonify({"error": "Los campos 'usuario' y 'contraseña' son obligatorios"}),
+            400,
+        )
+
+    if len(user) < 3:
+        return jsonify({"error": "El usuario debe tener al menos 3 caracteres"}), 400
+
+    if len(password) < 4:
+        return jsonify({"error": "La contraseña debe tener al menos 4 caracteres"}), 400
+
+    try:
+        with sqlite3.connect(DB_NAME) as conn:
+            conn.execute(
+                """
+                INSERT INTO usuarios (usuario, contrasena_hash, fecha_registro)
+                VALUES (?, ?, ?)
+                """,
+                (
+                    user,
+                    hash_password(password),
+                    datetime.now().isoformat(timespec="seconds"),
+                ),
+            )
+        return (
+            jsonify({"mensaje": f"Usuario '{user}' registrado correctamente"}),
+            201,
+        )
+
+    except sqlite3.IntegrityError:
+        return jsonify({"error": f"El usuario '{user}' ya existe"}), 400
+
+    except sqlite3.Error as err:
+        print(f"Error al registrar usuario: {err}")
+        return jsonify({"error": "Error al registrar el usuario"}), 500
+
+
+# Basado en https://www.geeksforgeeks.org/python/hashing-passwords-in-python-with-bcrypt/
+# y https://mojoauth.com/security-guides/bcrypt-in-python
+def hash_password(password: str) -> str:
+    password_bytes = password.encode("utf-8")[:72]
+    return bcrypt.hashpw(password_bytes, bcrypt.gensalt()).decode("utf-8")
+
+
+def check_password(password: str, saved_hash: str) -> bool:
+    password_bytes = password.encode("utf-8")[:72]
+    try:
+        return bcrypt.checkpw(password_bytes, saved_hash.encode("utf-8"))
+    except ValueError:
+        return False
 
 
 if __name__ == "__main__":
