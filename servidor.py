@@ -2,7 +2,6 @@ import sqlite3
 import sys
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
-from datetime import datetime
 from flask import Flask, jsonify, render_template_string, request
 
 app = Flask(__name__)
@@ -14,13 +13,26 @@ _ph = PasswordHasher()
 
 def db():
     try:
-        # Se conecta a la DB y crea la tabla.
         with sqlite3.connect(DB_NAME) as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS tareas (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     descripcion TEXT NOT NULL,
                     terminada INTEGER NOT NULL DEFAULT 0
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS usuarios (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    usuario TEXT NOT NULL UNIQUE,
+                    contrasena_hash TEXT NOT NULL
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS sesiones (
+                    token TEXT PRIMARY KEY,
+                    usuario_id INTEGER NOT NULL,
+                    FOREIGN KEY (usuario_id) REFERENCES usuarios (id) ON DELETE CASCADE
                 )
             """)
         return True
@@ -326,7 +338,6 @@ def register():
                 (
                     user,
                     hash_password(password),
-                    datetime.now().isoformat(timespec="seconds"),
                 ),
             )
         return (
