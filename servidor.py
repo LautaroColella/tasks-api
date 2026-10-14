@@ -1,5 +1,6 @@
 import sqlite3
 import sys
+import secrets
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 from flask import Flask, jsonify, render_template_string, request
@@ -72,19 +73,19 @@ def welcome():
                     </tr>
                     <tr>
                         <td>POST</td>
-                        <td><code>/api/registro</code></td>
+                        <td><code>/registro</code></td>
                         <td>Registra un usuario nuevo. La contraseña se guarda hasheada.</td>
                         <td><code>{"usuario": "nombre", "contraseña": "1234"}</code></td>
                     </tr>
                     <tr>
                         <td>POST</td>
-                        <td><code>/api/login</code></td>
+                        <td><code>/login</code></td>
                         <td>Verifica credenciales y devuelve un token de sesión.</td>
                         <td><code>{"usuario": "nombre", "contraseña": "1234"}</code></td>
                     </tr>
                     <tr>
                         <td>POST</td>
-                        <td><code>/api/logout</code></td>
+                        <td><code>/logout</code></td>
                         <td>Cierra la sesión actual e invalida el token.</td>
                         <td>Header <code>Authorization: Bearer &lt;token&gt;</code></td>
                     </tr>
@@ -194,8 +195,7 @@ def create_task():
     if error:
         return error
     data = request.get_json(silent=True) or {}
-    description = data.get("descripcion") or ""
-    description.strip()
+    description = (data.get("descripcion") or "").strip()
     finished = 1 if data.get("terminada") is True else 0
 
     if not description:
@@ -332,8 +332,8 @@ def register():
         with sqlite3.connect(DB_NAME) as conn:
             conn.execute(
                 """
-                INSERT INTO usuarios (usuario, contrasena_hash, fecha_registro)
-                VALUES (?, ?, ?)
+                INSERT INTO usuarios (usuario, contrasena_hash)
+                VALUES (?, ?)
                 """,
                 (
                     user,
@@ -351,6 +351,82 @@ def register():
     except sqlite3.Error as err:
         print(f"Error al registrar usuario: {err}")
         return jsonify({"error": "Error al registrar el usuario"}), 500
+
+
+@app.route("/login", methods=["POST"])
+def login():
+    data = request.get_json(silent=True) or {}
+    user = (data.get("usuario") or "").strip()
+    password = data.get("contraseña") or ""
+
+    if not user or not password:
+        return (
+            jsonify({"error": "Los campos 'usuario' y 'contraseña' son obligatorios"}),
+            400,
+        )
+
+    try:
+        with sqlite3.connect(DB_NAME) as conn:
+            conn.row_factory = sqlite3.Row
+            user = conn.execute(
+                "SELECT * FROM usuarios WHERE usuario = ?",
+                (user,),
+            ).fetchone()
+
+            if user is None or not check_password(password, user["contrasena_hash"]):
+                return jsonify({"error": "Credenciales inválidas"}), 401
+
+            token = secrets.token_hex(32)
+            conn.execute(
+                """
+                INSERT INTO sesiones (token, usuario_id)
+                VALUES (?, ?)
+                """,
+                (token, user["id"]),
+            )
+
+        return (
+            jsonify(
+                {
+                    "usuario": user,
+                    "token": token,
+                }
+            ),
+            200,
+        )
+
+    except sqlite3.Error as err:
+        print(f"Error al iniciar sesión: {err}")
+        return jsonify({"error": "Error al iniciar sesión"}), 500
+
+
+@app.route("/logout", methods=["POST"])
+def logout():
+    header = request.headers.get("Authorization", "")
+
+    if not header.startswith("Bearer "):
+        return (
+            jsonify({"error": "Falta el header 'Authorization: Bearer <token>'"}),
+            400,
+        )
+
+    token = header[7:].strip()
+
+    try:
+        with sqlite3.connect(DB_NAME) as conn:
+            cursor = conn.execute(
+                "DELETE FROM sesiones WHERE token = ?",
+                (token,),
+            )
+
+            if cursor.rowcount == 0:
+                return jsonify({"error": "Token inválido o sesión ya cerrada"}), 404
+
+        return jsonify({"mensaje": "Sesión cerrada correctamente"}), 200
+
+    except sqlite3.Error as err:
+        print(f"Error al cerrar sesión: {err}")
+        return jsonify({"error": "Error al cerrar sesión"}), 500
 
 
 def valid_login():
