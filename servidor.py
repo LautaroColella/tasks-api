@@ -38,11 +38,72 @@ def welcome():
     <body>
         <section>
             <h1>Página de bienvenida</h1>
-            <p>Descripcion de los metodos y como usar la api</p>
-            <ul>
-                <li><a href="/registro">Ir a /registro</a></li>
-                <li><a href="/login">Ir a /login</a></li>
-            </ul>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Método</th>
+                        <th>Ruta</th>
+                        <th>Descripción</th>
+                        <th>Cuerpo / Respuesta</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>GET</td>
+                        <td><code>/tareas</code></td>
+                        <td>Página HTML de bienvenida con el resumen de la API.</td>
+                        <td>HTML</td>
+                    </tr>
+                    <tr>
+                        <td>POST</td>
+                        <td><code>/api/registro</code></td>
+                        <td>Registra un usuario nuevo. La contraseña se guarda hasheada.</td>
+                        <td><code>{"usuario": "nombre", "contraseña": "1234"}</code></td>
+                    </tr>
+                    <tr>
+                        <td>POST</td>
+                        <td><code>/api/login</code></td>
+                        <td>Verifica credenciales y devuelve un token de sesión.</td>
+                        <td><code>{"usuario": "nombre", "contraseña": "1234"}</code></td>
+                    </tr>
+                    <tr>
+                        <td>POST</td>
+                        <td><code>/api/logout</code></td>
+                        <td>Cierra la sesión actual e invalida el token.</td>
+                        <td>Header <code>Authorization: Bearer &lt;token&gt;</code></td>
+                    </tr>
+                    <tr>
+                        <td>GET</td>
+                        <td><code>/api/tareas</code></td>
+                        <td>Lista todas las tareas del usuario autenticado.</td>
+                        <td>JSON array (o mensaje si está vacío)</td>
+                    </tr>
+                    <tr>
+                        <td>GET</td>
+                        <td><code>/api/tareas/&lt;id&gt;</code></td>
+                        <td>Devuelve una tarea por su id.</td>
+                        <td>JSON object o <code>404</code></td>
+                    </tr>
+                    <tr>
+                        <td>POST</td>
+                        <td><code>/api/tareas</code></td>
+                        <td>Crea una nueva tarea.</td>
+                        <td><code>{"descripcion": "texto", "terminada": false}</code></td>
+                    </tr>
+                    <tr>
+                        <td>PUT</td>
+                        <td><code>/api/tareas/&lt;id&gt;</code></td>
+                        <td>Actualiza la descripción y/o el estado de una tarea.</td>
+                        <td><code>{"descripcion": "nuevo", "terminada": true}</code></td>
+                    </tr>
+                    <tr>
+                        <td>DELETE</td>
+                        <td><code>/api/tareas/&lt;id&gt;</code></td>
+                        <td>Elimina una tarea por su id.</td>
+                        <td>JSON con el mensaje de confirmación</td>
+                    </tr>
+                </tbody>
+            </table>
         </section>
     </body>
     </html>
@@ -183,6 +244,36 @@ def update_task(task_id):
     except sqlite3.Error as err:
         print(f"Error al actualizar la tarea #{task_id} en la base de datos: {err}")
         return jsonify({"error": "Error al actualizar la tarea"}), 500
+
+
+@app.route("/api/tareas/<int:task_id>", methods=["DELETE"])
+def delete_task(task_id):
+    try:
+        with sqlite3.connect(DB_NAME) as conn:
+            conn.row_factory = sqlite3.Row
+
+            task = conn.execute(
+                "SELECT * FROM tareas WHERE id = ?", (task_id,)
+            ).fetchone()
+
+            if task is None:
+                return jsonify({"error": f"No existe una tarea con id #{task_id}"}), 404
+
+            conn.execute("DELETE FROM tareas WHERE id = ?", (task_id,))
+
+            return (
+                jsonify(
+                    {
+                        "mensaje": f"Tarea #{task_id} eliminada correctamente",
+                        "tarea": dict(task),
+                    }
+                ),
+                200,
+            )
+
+    except sqlite3.Error as err:
+        print(f"Error al eliminar la tarea #{task_id} de la base de datos: {err}")
+        return jsonify({"error": "Error al eliminar la tarea"}), 500
 
 
 if __name__ == "__main__":
