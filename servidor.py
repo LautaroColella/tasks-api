@@ -1,6 +1,7 @@
 import sqlite3
 import sys
-import bcrypt
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError
 from datetime import datetime
 from flask import Flask, jsonify, render_template_string, request
 
@@ -8,6 +9,7 @@ app = Flask(__name__)
 DB_NAME = "tareas.db"
 HOST = "127.0.0.1"
 PORT = 5000
+_ph = PasswordHasher()
 
 
 def db():
@@ -117,6 +119,10 @@ def welcome():
 
 @app.route("/api/tareas", methods=["GET"])
 def get_tasks():
+    error = valid_login()
+    if error:
+        return error
+
     try:
         with sqlite3.connect(DB_NAME) as conn:
             conn.row_factory = sqlite3.Row
@@ -145,6 +151,9 @@ def get_tasks():
 
 @app.route("/api/tareas/<int:task_id>", methods=["GET"])
 def get_task(task_id):
+    error = valid_login()
+    if error:
+        return error
     try:
         with sqlite3.connect(DB_NAME) as conn:
             conn.row_factory = sqlite3.Row
@@ -169,6 +178,9 @@ def get_task(task_id):
 
 @app.route("/api/tareas", methods=["POST"])
 def create_task():
+    error = valid_login()
+    if error:
+        return error
     data = request.get_json(silent=True) or {}
     description = data.get("descripcion") or ""
     description.strip()
@@ -202,6 +214,9 @@ def create_task():
 
 @app.route("/api/tareas/<int:task_id>", methods=["PUT"])
 def update_task(task_id):
+    error = valid_login()
+    if error:
+        return error
     data = request.get_json(silent=True) or {}
 
     try:
@@ -252,6 +267,9 @@ def update_task(task_id):
 
 @app.route("/api/tareas/<int:task_id>", methods=["DELETE"])
 def delete_task(task_id):
+    error = valid_login()
+    if error:
+        return error
     try:
         with sqlite3.connect(DB_NAME) as conn:
             conn.row_factory = sqlite3.Row
@@ -324,18 +342,38 @@ def register():
         return jsonify({"error": "Error al registrar el usuario"}), 500
 
 
-# Basado en https://www.geeksforgeeks.org/python/hashing-passwords-in-python-with-bcrypt/
-# y https://mojoauth.com/security-guides/bcrypt-in-python
+def valid_login():
+    header = request.headers.get("Authorization", "")
+
+    if not header.startswith("Bearer "):
+        return jsonify({"error": "No autenticado."}), 401
+
+    token = header[7:].strip()
+
+    try:
+        with sqlite3.connect(DB_NAME) as conn:
+            exists = conn.execute(
+                "SELECT 1 FROM sesiones WHERE token = ?",
+                (token,),
+            ).fetchone()
+    except sqlite3.Error as err:
+        print(f"Error al verificar la sesión: {err}")
+        return jsonify({"error": "Error al verificar la sesión"}), 500
+
+    if exists is None:
+        return jsonify({"error": "Token inválido o sesión cerrada"}), 401
+
+    return None
+
+
 def hash_password(password: str) -> str:
-    password_bytes = password.encode("utf-8")[:72]
-    return bcrypt.hashpw(password_bytes, bcrypt.gensalt()).decode("utf-8")
+    return _ph.hash(password)
 
 
 def check_password(password: str, saved_hash: str) -> bool:
-    password_bytes = password.encode("utf-8")[:72]
     try:
-        return bcrypt.checkpw(password_bytes, saved_hash.encode("utf-8"))
-    except ValueError:
+        return _ph.verify(saved_hash, password)
+    except VerifyMismatchError:
         return False
 
 
