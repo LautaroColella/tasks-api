@@ -1,6 +1,6 @@
 import sqlite3
 import sys
-from flask import Flask, jsonify, render_template_string
+from flask import Flask, jsonify, render_template_string, request
 
 app = Flask(__name__)
 DB_NAME = "tareas.db"
@@ -100,6 +100,39 @@ def get_task(task_id):
     except sqlite3.Error as err:
         print(f"Error al obtener la tarea #{task_id} de la base de datos: {err}")
         return jsonify({"error": "Error al obtener la tarea"}), 500
+
+
+@app.route("/api/tareas", methods=["POST"])
+def create_task():
+    data = request.get_json(silent=True) or {}
+    description = data.get("descripcion") or ""
+    description.strip()
+    finished = 1 if data.get("terminada") is True else 0
+
+    if not description:
+        return jsonify({"error": "El campo descripcion es obligatorio"}), 400
+
+    try:
+        with sqlite3.connect(DB_NAME) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute(
+                """
+                INSERT INTO tareas (descripcion, terminada)
+                VALUES (?, ?)
+                """,
+                (description, finished),
+            )
+            new_id = cursor.lastrowid
+
+            task = conn.execute(
+                "SELECT * FROM tareas WHERE id = ?", (new_id,)
+            ).fetchone()
+
+            return jsonify(dict(task)), 201
+
+    except sqlite3.Error as err:
+        print(f"Error al crear la tarea en la base de datos: {err}")
+        return jsonify({"error": "Error al crear la tarea"}), 500
 
 
 if __name__ == "__main__":
