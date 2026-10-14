@@ -62,7 +62,7 @@ def get_tasks():
                 """).fetchall()
 
             if not tasks:
-                return jsonify({"mensaje": "No hay tareas registradas."}), 200
+                return jsonify({"mensaje": "No hay tareas guardadas."}), 200
 
             # Se convierte el tipo "sqlite3.Row" https://docs.python.org/3/library/sqlite3.html#sqlite3.Row
             # a diccionario porque sino jsonify no lo puede serializar.
@@ -76,6 +76,30 @@ def get_tasks():
     except sqlite3.Error as err:
         print(f"Error al obtener todas las tareas de la base de datos: {err}")
         return jsonify({"error": "Error al obtener las tareas"}), 500
+
+
+@app.route("/api/tareas/<int:task_id>", methods=["GET"])
+def get_task(task_id):
+    try:
+        with sqlite3.connect(DB_NAME) as conn:
+            conn.row_factory = sqlite3.Row
+            task = conn.execute(
+                """
+                SELECT *
+                FROM tareas
+                WHERE id = ?
+                """,
+                (task_id,),
+            ).fetchone()
+
+            if task is None:
+                return jsonify({"error": f"No existe una tarea con id #{task_id}"}), 404
+
+            return jsonify(dict(task))
+
+    except sqlite3.Error as err:
+        print(f"Error al obtener la tarea #{task_id} de la base de datos: {err}")
+        return jsonify({"error": "Error al obtener la tarea"}), 500
 
 
 if __name__ == "__main__":
