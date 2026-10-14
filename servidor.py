@@ -135,6 +135,56 @@ def create_task():
         return jsonify({"error": "Error al crear la tarea"}), 500
 
 
+@app.route("/api/tareas/<int:task_id>", methods=["PUT"])
+def update_task(task_id):
+    data = request.get_json(silent=True) or {}
+
+    try:
+        with sqlite3.connect(DB_NAME) as conn:
+            conn.row_factory = sqlite3.Row
+
+            task = conn.execute(
+                "SELECT * FROM tareas WHERE id = ?", (task_id,)
+            ).fetchone()
+
+            if task is None:
+                return jsonify({"error": f"No existe una tarea con id #{task_id}"}), 404
+
+            description = data.get("descripcion", task["descripcion"])
+            if isinstance(description, str):
+                description = description.strip()
+
+            if not description:
+                return (
+                    jsonify({"error": "El campo descripcion no puede quedar vacío"}),
+                    400,
+                )
+
+            if "terminada" in data:
+                finished = 1 if data["terminada"] is True else 0
+            else:
+                finished = task["terminada"]
+
+            conn.execute(
+                """
+                UPDATE tareas
+                SET descripcion = ?, terminada = ?
+                WHERE id = ?
+                """,
+                (description, finished, task_id),
+            )
+
+            task = conn.execute(
+                "SELECT * FROM tareas WHERE id = ?", (task_id,)
+            ).fetchone()
+
+            return jsonify(dict(task))
+
+    except sqlite3.Error as err:
+        print(f"Error al actualizar la tarea #{task_id} en la base de datos: {err}")
+        return jsonify({"error": "Error al actualizar la tarea"}), 500
+
+
 if __name__ == "__main__":
     db_on = db()
 
