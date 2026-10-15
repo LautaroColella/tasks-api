@@ -313,6 +313,7 @@ def delete_task(task_id):
 @app.route("/registro", methods=["POST"])
 def register():
     data = request.get_json(silent=True) or {}
+    print(data)
     user = (data.get("usuario") or "").strip()
     password = data.get("contraseña") or ""
 
@@ -368,12 +369,12 @@ def login():
     try:
         with sqlite3.connect(DB_NAME) as conn:
             conn.row_factory = sqlite3.Row
-            user = conn.execute(
+            row = conn.execute(
                 "SELECT * FROM usuarios WHERE usuario = ?",
                 (user,),
             ).fetchone()
 
-            if user is None or not check_password(password, user["contrasena_hash"]):
+            if row is None or not check_password(password, row["contrasena_hash"]):
                 return jsonify({"error": "Credenciales inválidas"}), 401
 
             token = secrets.token_hex(32)
@@ -382,13 +383,13 @@ def login():
                 INSERT INTO sesiones (token, usuario_id)
                 VALUES (?, ?)
                 """,
-                (token, user["id"]),
+                (token, row["id"]),
             )
 
         return (
             jsonify(
                 {
-                    "usuario": user,
+                    "usuario": row["usuario"],
                     "token": token,
                 }
             ),
